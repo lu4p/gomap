@@ -70,16 +70,25 @@ func scanIPPorts(hostname string, proto string, fastscan bool) (IPScanResult, er
 	// due to timeouts when scanning a large number of ports at once.
 	// I am open to new solutions to this brick of code
 	resultChannel := make(chan portResult, tasks)
+	sem := make(chan int, 10)
 	if fastscan {
 		for i := start; i <= end; i++ {
 			if service, ok := commonlist[i]; ok {
-				go scanPort(resultChannel, proto, hostname, service, i, fastscan)
+				sem <- 1
+				go func() {
+					go scanPort(resultChannel, proto, hostname, service, i, fastscan)
+					<-sem
+				}()
 			}
 		}
 	} else {
 		for i := start; i <= end; i++ {
 			if service, ok := detailedlist[i]; ok {
-				go scanPort(resultChannel, proto, hostname, service, i, fastscan)
+				sem <- 1
+				go func() {
+					go scanPort(resultChannel, proto, hostname, service, i, fastscan)
+					<-sem
+				}()
 			}
 		}
 	}
@@ -90,10 +99,11 @@ func scanIPPorts(hostname string, proto string, fastscan bool) (IPScanResult, er
 	for {
 		if len(resultChannel) == tasks {
 			close(resultChannel)
+			close(sem)
 			break
 		} else {
 			fmt.Printf("\033[2K\rHost: %s | Ports Scanned %d/%d", hostname, len(resultChannel), tasks)
-			time.Sleep(1000 * time.Millisecond)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}
 
